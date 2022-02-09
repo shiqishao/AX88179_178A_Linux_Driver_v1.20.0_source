@@ -1027,7 +1027,7 @@ static const struct net_device_ops ax88179_netdev_ops = {
 	.ndo_set_features	= ax88179_set_features,
 #endif
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 12, 0)
-	.ndo_get_stats64	= usbnet_get_stats64,
+	.ndo_get_stats64	= dev_get_tstats64,
 #endif
 };
 #endif
