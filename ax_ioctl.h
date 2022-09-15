@@ -16,6 +16,15 @@
  ******************************************************************************/
 #ifndef __ASIX_IOCTL_H
 #define __ASIX_IOCTL_H
+
+#ifdef ENABLE_IOCTL_DEBUG
+#define DEBUG_PRINT(fmt, args...) printf(fmt, ## args)
+#define DEBUG_PRINTK(fmt, args...) printk(fmt, ## args)
+#else
+#define DEBUG_PRINT(fmt, args...)
+#define DEBUG_PRINTK(fmt, args...)
+#endif
+
 // CHANGE NETWORK INTERFACE WAY
 // DEFAULT_SCAN   : scan "eth0" - "eth255"
 // INTERFACE_SCAN : scan all available network interfaces
@@ -42,6 +51,17 @@
 #define AX88179A_READ_FLASH		7
 #define AX88179A_PROGRAM_EFUSE		8
 #define AX88179A_DUMP_EFUSE		9
+#define AX88179A_IEEE_TEST		10
+
+#define IEEE_1000M1			0
+#define IEEE_1000M2			1
+#define IEEE_1000M3			2
+#define IEEE_1000M4			3
+#define IEEE_100CA			4
+#define IEEE_100CB			5
+#define IEEE_10R			6
+#define IEEE_10FF			7
+#define IEEE_10MDI			8
 
 #define ERR_FALSH_WRITE_EN		1
 #define ERR_FALSH_WRITE_DIS		2
@@ -49,12 +69,28 @@
 #define ERR_FALSH_WRITE			4
 #define ERR_FALSH_READ			5
 #define ERR_EFUSE_READ			6
-#define ERR_EFUSE_WRITE			6
+#define ERR_EFUSE_WRITE			7
+#define ERR_IEEE_INVALID_CHIP		8
 
 #define USB_READ_OPS			0
 #define USB_WRITE_OPS			1
 
 #define SCAN_DEV_MAX_RETRY		10
+
+enum _exit_code {
+	SUCCESS			= 0,
+	FAIL_INVALID_PARAMETER	= 1,
+	FAIL_IOCTL,
+	FAIL_SCAN_DEV,
+	FAIL_ALLCATE_MEM,
+	FAIL_LOAD_FILE,
+	FAIL_FLASH_WRITE,
+	FAIL_IVALID_VALUE,
+	FAIL_IVALID_CHKSUM,
+	FAIL_NON_EMPTY_RFUSE_BLOCK,
+	FAIL_EFUSE_WRITE,
+	FAIL_GENERIAL_ERROR,
+};
 
 struct _ax_usb_command {
 	unsigned char	ops;
@@ -77,6 +113,13 @@ struct _ax88179a_version {
 	unsigned char version[16];
 };
 
+struct _ax88179a_ieee {
+	unsigned int type;
+	unsigned int speed;
+	unsigned int stop;
+	int status;
+};
+
 struct _ax_ioctl_command {
 	unsigned short	ioctl_cmd;
 	unsigned char	sig[16];
@@ -87,6 +130,7 @@ struct _ax_ioctl_command {
 	union {
 		struct _ax88179a_flash		flash;
 		struct _ax88179a_version	version;
+		struct _ax88179a_ieee		ieee;
 		struct _ax_usb_command		usb_cmd;
 	};
 };
@@ -109,7 +153,7 @@ struct ax_command_info {
 	const char *help_desc;
 };
 
-typedef void (*MENU_FUNC)(struct ax_command_info *info);
+typedef int (*MENU_FUNC)(struct ax_command_info *info);
 
 struct _command_list {
 	char *cmd;
@@ -118,4 +162,5 @@ struct _command_list {
 	const char *help_ins;
 	const char *help_desc;
 };
+
 #endif /* __ASIX_IOCTL_H */

@@ -84,10 +84,10 @@ typedef int (*usb_write_function)(struct ax_device *axdev, u8 cmd, u16 value,
 		axdev->chip_version, \
 		axdev->sub_version)
 
-#define AX88179_MAX_TX		4
+#define AX88179_MAX_TX		8
 #define AX88179_MAX_RX		10
-#define AX88179_BUF_TX_SIZE	(48 * 1024)
-#define AX_GSO_DEFAULT_SIZE	(15 * 1024)
+#define AX88179_BUF_TX_SIZE	(81 * 1024)
+#define AX_GSO_DEFAULT_SIZE	(16 * 1024)
 #define INTBUFSIZE		8
 #define TX_ALIGN		4
 #define RX_ALIGN		8
@@ -342,6 +342,7 @@ enum ax_driver_flags {
 	AX_LINK_CHG,
 	AX_SELECTIVE_SUSPEND,
 	AX_SCHEDULE_NAPI,
+	AX_EN_RX,
 };
 
 enum ax_chip_version {
@@ -422,7 +423,7 @@ struct ax_device {
 	struct sk_buff_head tx_queue[AX_TX_QUEUE_SIZE];
 	struct sk_buff_head rx_queue;
 	spinlock_t rx_lock, tx_lock;
-	struct delayed_work schedule, hw_phy_work;
+	struct delayed_work schedule;
 	struct mii_if_info mii;
 	struct mutex control;
 
@@ -454,6 +455,7 @@ struct ax_device {
 #define AX_ETH_SPEED_MASK	0xF
 #define AX_ETH_DUPLEX_FULL	0x10
 	u8 int_link_info;
+	u8 int_link_chg;
 
 	u64 bulkin_complete;
 	u64 bulkin_error;
@@ -461,6 +463,16 @@ struct ax_device {
 	u64 bulkout_error;
 	u64 bulkint_complete;
 	u64 bulkint_error;
+#define CHIP_40PIN	0x03
+#define CHIP_32PIN	0x02
+	u8 chip_pin;
+#ifdef ENABLE_DWC3_ENHANCE
+	u8 intr_not_first_link_up;
+#endif
+#ifdef ENABLE_INT_POLLING
+#define INT_POLLING_TIMER	128	/* in milliseconds */
+	struct delayed_work int_polling_work;
+#endif
 };
 
 struct driver_info {
@@ -488,7 +500,10 @@ struct _async_cmd_handle {
 
 struct ax_device_int_data {
 	u8 res1;
-	struct ax_link_info link_info;
+	union {
+		struct ax_link_info link_info;
+		u8 link_info_u8;
+	};
 #define AX_INT_PPLS_LINK	(1 << 0)
 #define AX_INT_SPLS_LINK	(1 << 1)
 #define AX_INT_CABOFF_UNPLUG	(1 << 7)
@@ -525,13 +540,22 @@ struct _ax_buikin_setting {
 #define AX_RXHDR_MII_ERR	0x40000000
 #define AX_RXHDR_DROP_ERR	0x80000000
 
+static inline void *__rx_buf_align(void *data)
+{
+	return (void *)ALIGN((uintptr_t)data, RX_ALIGN);
+}
+static inline void *__tx_buf_align(void *data, u8 tx_align_len)
+{
+	return (void *)ALIGN((uintptr_t)data, tx_align_len);
+}
+static inline struct net_device_stats *ax_get_stats(struct net_device *netdev)
+{
+	return &netdev->stats;
+}
+
 int ax_check_ether_addr(struct ax_device *axdev);
 int ax_get_mac_pass(struct ax_device *axdev, u8 *mac);
 void ax_set_tx_qlen(struct ax_device *dev);
-
-inline void *__rx_buf_align(void *data);
-inline void *__tx_buf_align(void *data, u8 tx_align_len);
-inline struct net_device_stats *ax_get_stats(struct net_device *dev);
 void ax_write_bulk_callback(struct urb *urb);
 
 void ax_get_drvinfo(struct net_device *net, struct ethtool_drvinfo *info);

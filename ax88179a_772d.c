@@ -26,6 +26,9 @@ struct _ax_buikin_setting AX88179A_BULKIN_SIZE[] = {
 	{7, 0xC0, 0x04,	0x06, 0x0F},	//100M, Half, HS
 	{7, 0x00, 0,	0x03, 0x3F},	//FS
 };
+
+static int ax88179a_set_phy_power(struct ax_device *axdev, bool on);
+
 static int ax88179a_chk_eee(struct ax_device *axdev)
 {
 	struct ethtool_cmd ecmd = { .cmd = ETHTOOL_GSET };
@@ -280,6 +283,8 @@ int ax88179a_read_version(struct ax_device *axdev,
 {
 	unsigned char temp[16] = {0};
 
+	DEBUG_PRINTK("%s - Start", __func__);
+
 	sprintf(temp, "v%d.%d.%d.%d",
 		axdev->fw_version[0], axdev->fw_version[1],
 		axdev->fw_version[2], axdev->fw_version[3]);
@@ -295,6 +300,8 @@ int ax88179a_write_flash(struct ax_device *axdev,
 	int i, ret;
 	u8 *buf = NULL;
 	u8 *block;
+
+	DEBUG_PRINTK("%s - Start", __func__);
 
 	buf = kzalloc(256, GFP_KERNEL);
 	if (!buf)
@@ -313,6 +320,8 @@ int ax88179a_write_flash(struct ax_device *axdev,
 	     i += 256) {
 		if (copy_from_user(block,
 				   (void __user *)&info->flash.buf[i], 256)) {
+			netdev_err(axdev->netdev,
+				   "copy_from_user offset: 0x%x failed", i);
 			ret = -EFAULT;
 			goto out;
 		}
@@ -321,6 +330,8 @@ int ax88179a_write_flash(struct ax_device *axdev,
 					(u16)((i >> 16) & 0xFFFF),
 					(u16)(i & 0xFFFF), 256, block);
 		if (ret < 0) {
+			netdev_err(axdev->netdev,
+				   "Flash write offset: 0x%x failed", i);
 			info->flash.status = -ERR_FALSH_WRITE;
 			goto out;
 		}
@@ -344,6 +355,8 @@ int ax88179a_read_flash(struct ax_device *axdev, struct _ax_ioctl_command *info)
 	void *buf = NULL;
 	u8 *block;
 
+	DEBUG_PRINTK("%s - Start", __func__);
+
 	buf = kzalloc(256, GFP_KERNEL);
 	if (!buf)
 		return -ENOMEM;
@@ -356,12 +369,16 @@ int ax88179a_read_flash(struct ax_device *axdev, struct _ax_ioctl_command *info)
 				  (u16)((i >> 16) & 0xFFFF),
 				  (u16)(i & 0xFFFF), 256, block, 0);
 		if (ret < 0) {
+			netdev_err(axdev->netdev,
+				   "Flash read offset: 0x%x failed", i);
 			info->flash.status = -ERR_FALSH_READ;
 			break;
 		}
 
 		if (copy_to_user((void __user *)&info->flash.buf[i],
 				 block, 256)) {
+			netdev_err(axdev->netdev,
+				   "copy_to_user offset: 0x%x failed", i);
 			ret = -EFAULT;
 			break;
 		}
@@ -379,12 +396,19 @@ int ax88179a_program_efuse(struct ax_device *axdev,
 	u16 offset = (u16)(info->flash.offset * 16);
 	u8 buf[20] = {0};
 
+	DEBUG_PRINTK("%s - Start offset: %d (0x%x)", __func__, offset, offset);
+
 	ret = copy_from_user(buf, (void __user *)info->flash.buf, 20);
-	if (ret)
+	if (ret) {
+		netdev_err(axdev->netdev,
+			   "copy_from_user efuse offset: 0x%x failed", offset);
 		return ret;
+	}
 
 	ret = ax_write_cmd(axdev, AX_ACCESS_EFUSE, offset, 0, 20, buf);
 	if (ret < 0) {
+		netdev_err(axdev->netdev,
+			   "eFuse write offset: 0x%x failed", offset);
 		info->flash.status = -ERR_EFUSE_WRITE;
 		return ret;
 	}
@@ -398,13 +422,22 @@ int ax88179a_dump_efuse(struct ax_device *axdev, struct _ax_ioctl_command *info)
 	u16 offset = (u16)(info->flash.offset * 16);
 	u8 buf[20] = {0};
 
+	DEBUG_PRINTK("%s - Start offset: %d (0x%x)", __func__, offset, offset);
+
 	ret = ax_read_cmd(axdev, AX_ACCESS_EFUSE, offset, 0, 20, buf, 0);
 	if (ret < 0) {
+		netdev_err(axdev->netdev,
+			   "eFuse read offset: 0x%x failed", offset);
 		info->flash.status = -ERR_EFUSE_READ;
 		return ret;
 	}
 
 	ret = copy_to_user((void __user *)info->flash.buf, buf, 20);
+	if (ret) {
+		netdev_err(axdev->netdev,
+			   "copy_to_user efuse offset: 0x%x failed", offset);
+		return ret;
+	}
 
 	return ret;
 }
@@ -412,6 +445,8 @@ int ax88179a_dump_efuse(struct ax_device *axdev, struct _ax_ioctl_command *info)
 int ax88179a_boot_to_rom(struct ax_device *axdev,
 			 struct _ax_ioctl_command *info)
 {
+	DEBUG_PRINTK("%s - Start", __func__);
+
 	usb_control_msg(axdev->udev, usb_sndctrlpipe(axdev->udev, 0),
 			AX88179A_BOOT_TO_ROM,
 			USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_DEVICE,
@@ -424,6 +459,8 @@ int ax88179a_erase_flash(struct ax_device *axdev,
 			 struct _ax_ioctl_command *info)
 {
 	int ret = 0;
+
+	DEBUG_PRINTK("%s - Start", __func__);
 
 	ret = ax_write_cmd(axdev, AX88179A_FLASH_WEN, 0, 0, 0, NULL);
 	if (ret < 0) {
@@ -456,6 +493,8 @@ int ax88179a_sw_reset(struct ax_device *axdev, struct _ax_ioctl_command *info)
 {
 	void *buf = NULL;
 
+	DEBUG_PRINTK("%s - Start", __func__);
+
 	buf = kzalloc(sizeof(u32), GFP_KERNEL);
 	if (!buf)
 		return -ENOMEM;
@@ -471,6 +510,144 @@ int ax88179a_sw_reset(struct ax_device *axdev, struct _ax_ioctl_command *info)
 	return 0;
 }
 
+#define _MDIO_WRITE(offset, value) \
+	ax_mdio_write(netdev, phy_id, offset, value)
+
+int ax88179a_ieee_test(struct ax_device *axdev, struct _ax_ioctl_command *info)
+{
+	struct net_device *netdev = axdev->netdev;
+	int phy_id = axdev->mii.phy_id;
+	int ret;
+
+	DEBUG_PRINTK("%s - Start", __func__);
+	DEBUG_PRINTK("Stop: %d", info->ieee.stop);
+	DEBUG_PRINTK("Speed: %d", info->ieee.speed);
+	DEBUG_PRINTK("Type: %d", info->ieee.type);
+
+	if (info->ieee.speed == 1000 && axdev->chip_pin == CHIP_32PIN) {
+		netdev_err(axdev->netdev, "Invalid Chip pin");
+		info->ieee.status = -ERR_IEEE_INVALID_CHIP;
+		return -EINVAL;
+	}
+
+	if (info->ieee.stop) {
+		ret = ax88179a_set_phy_power(axdev, false);
+		if (ret < 0)
+			return ret;
+		msleep(500);
+
+		ret = ax88179a_set_phy_power(axdev, true);
+		if (ret < 0)
+			return ret;
+		msleep(500);
+
+		switch (info->ieee.speed) {
+		case 1000:
+		case 100:
+			break;
+		case 10:
+			_MDIO_WRITE(0x00, 0x0100);
+			_MDIO_WRITE(0x0D, 0x001E);
+			_MDIO_WRITE(0x0E, 0x0145);
+			_MDIO_WRITE(0x0D, 0x401E);
+			_MDIO_WRITE(0x0E, 0x5010);
+			_MDIO_WRITE(0x0D, 0x001F);
+			_MDIO_WRITE(0x0E, 0x027B);
+			_MDIO_WRITE(0x0D, 0x401F);
+			_MDIO_WRITE(0x0E, 0x1177);
+			break;
+		default:
+			return -EINVAL;
+		};
+	} else {
+		switch (info->ieee.type) {
+		case IEEE_1000M1:
+			_MDIO_WRITE(0x09, 0x2700);
+			break;
+		case IEEE_1000M2:
+			_MDIO_WRITE(0x09, 0x4700);
+			break;
+		case IEEE_1000M3:
+			_MDIO_WRITE(0x09, 0x6700);
+			break;
+		case IEEE_1000M4:
+			_MDIO_WRITE(0x09, 0x8700);
+			break;
+		case IEEE_100CA:
+			_MDIO_WRITE(0x00, 0x2100);
+			_MDIO_WRITE(0x0D, 0x001E);
+			_MDIO_WRITE(0x0E, 0x0145);
+			_MDIO_WRITE(0x0D, 0x401E);
+			_MDIO_WRITE(0x0E, 0x5010);
+			break;
+		case IEEE_100CB:
+			_MDIO_WRITE(0x00, 0x2100);
+			_MDIO_WRITE(0x0D, 0x001E);
+			_MDIO_WRITE(0x0E, 0x0145);
+			_MDIO_WRITE(0x0D, 0x401E);
+			_MDIO_WRITE(0x0E, 0x5018);
+			break;
+		case IEEE_10R:
+			ret = ax88179a_set_phy_power(axdev, false);
+			if (ret < 0)
+				return ret;
+			msleep(100);
+
+			ret = ax88179a_set_phy_power(axdev, true);
+			if (ret < 0)
+				return ret;
+			_MDIO_WRITE(0x00, 0x0100);
+			_MDIO_WRITE(0x0D, 0x001E);
+			_MDIO_WRITE(0x0E, 0x0145);
+			_MDIO_WRITE(0x0D, 0x401E);
+			_MDIO_WRITE(0x0E, 0x5010);
+			_MDIO_WRITE(0x0D, 0x001F);
+			_MDIO_WRITE(0x0E, 0x027B);
+			_MDIO_WRITE(0x0D, 0x401F);
+			_MDIO_WRITE(0x0E, 0x1177);
+			_MDIO_WRITE(0x1F, 0x0001);
+			_MDIO_WRITE(0x1D, 0xF842);
+			break;
+		case IEEE_10FF:
+			ret = ax88179a_set_phy_power(axdev, false);
+			if (ret < 0)
+				return ret;
+			msleep(100);
+
+			ret = ax88179a_set_phy_power(axdev, true);
+			if (ret < 0)
+				return ret;
+			_MDIO_WRITE(0x00, 0x0100);
+			_MDIO_WRITE(0x0D, 0x001E);
+			_MDIO_WRITE(0x0E, 0x0145);
+			_MDIO_WRITE(0x0D, 0x401E);
+			_MDIO_WRITE(0x0E, 0x5010);
+			_MDIO_WRITE(0x0D, 0x001F);
+			_MDIO_WRITE(0x0E, 0x027B);
+			_MDIO_WRITE(0x0D, 0x401F);
+			_MDIO_WRITE(0x0E, 0x1177);
+			_MDIO_WRITE(0x1F, 0x0001);
+			_MDIO_WRITE(0x1D, 0xF840);
+			break;
+		case IEEE_10MDI:
+			_MDIO_WRITE(0x00, 0x0100);
+			_MDIO_WRITE(0x0D, 0x001E);
+			_MDIO_WRITE(0x0E, 0x0145);
+			_MDIO_WRITE(0x0D, 0x401E);
+			_MDIO_WRITE(0x0E, 0x5010);
+			_MDIO_WRITE(0x0D, 0x001F);
+			_MDIO_WRITE(0x0E, 0x027B);
+			_MDIO_WRITE(0x0D, 0x401F);
+			_MDIO_WRITE(0x0E, 0x1177);
+			break;
+		default:
+			return -EINVAL;
+		};
+	}
+
+	return 0;
+}
+
 IOCTRL_TABLE ax88179a_tbl[] = {
 	ax88179a_signature,
 	ax_usb_command,
@@ -482,6 +659,7 @@ IOCTRL_TABLE ax88179a_tbl[] = {
 	ax88179a_read_flash,
 	ax88179a_program_efuse,
 	ax88179a_dump_efuse,
+	ax88179a_ieee_test,
 };
 
 
@@ -501,7 +679,7 @@ int ax88179a_siocdevprivate(struct net_device *netdev, struct ifreq *rq,
 			netdev_err(netdev, "copy_from_user, return -EFAULT");
 			return -EFAULT;
 		}
-
+		DEBUG_PRINTK("ioctl_cmd: %d", info.ioctl_cmd);
 		ret = (*ax88179a_tbl[info.ioctl_cmd])(axdev, &info);
 		if (ret < 0) {
 			netdev_err(netdev, "ax88179a_tbl, return %d", ret);
@@ -545,7 +723,7 @@ int ax88179a_ioctl(struct net_device *netdev, struct ifreq *rq, int cmd)
 			netdev_err(netdev, "copy_from_user, return -EFAULT");
 			return -EFAULT;
 		}
-
+		DEBUG_PRINTK("ioctl_cmd: %d", ioctl_cmd);
 		ret = (*ax88179a_tbl[info.ioctl_cmd])(axdev, &info);
 		if (ret < 0) {
 			netdev_err(netdev, "ax88179a_tbl, return %d", ret);
@@ -595,7 +773,13 @@ static int ax88179a_set_phy_power(struct ax_device *axdev, bool on)
 	if (ret < 0)
 		return ret;
 	msleep(250);
+#ifdef ENABLE_DWC3_ENHANCE
+	if (on) {
+		u16 reg16;
 
+		ax_write_cmd(axdev, 0x32, 0x3, 0, 0, &reg16);
+	}
+#endif
 	return 0;
 }
 
@@ -725,9 +909,15 @@ void ax88179a_set_multicast(struct net_device *netdev)
 
 static int ax88179a_hw_init(struct ax_device *axdev)
 {
+	u32 reg32 = 0;
 	u16 reg16;
 	u8 reg8;
 	int ret;
+
+	ret = ax_read_cmd(axdev, AX88179A_PBUS_REG, 0x18C8, 0, 4, &reg32, 1);
+	if (ret < 0)
+		return ret;
+	axdev->chip_pin = reg32 & 0x03;
 
 	ret = ax88179a_set_phy_power(axdev, true);
 	if (ret < 0)
@@ -1007,12 +1197,12 @@ static int ax88179a_link_setting(struct ax_device *axdev)
 	medium_mode = AX_MEDIUM_RECEIVE_EN;
 	if (pause.rx_pause)
 		medium_mode |= AX_MEDIUM_RXFLOW_CTRLEN;
-	
+
 	if (pause.tx_pause) {
 		medium_mode |= AX_MEDIUM_TXFLOW_CTRLEN;
 		reg8[0] = 0x28 | AX_NEW_PAUSE_EN;
 	} else {
-		reg8[0] = 0;	
+		reg8[0] = 0;
 	}
 	ret = ax_write_cmd(axdev, AX_ACCESS_MAC, AX88179A_NEW_PAUSE_CTRL,
 			   1, 1, reg8);
@@ -1099,6 +1289,11 @@ static int ax88179a_link_reset(struct ax_device *axdev)
 	ret = ax88179a_get_ether_link(axdev);
 	if (ret < 0)
 		return ret;
+
+#ifdef ENABLE_DWC3_ENHANCE
+	if (axdev->int_link_chg)
+		axdev->link_info = axdev->intr_link_info;
+#endif
 
 	ret = ax88179a_link_setting(axdev);
 	if (ret < 0)

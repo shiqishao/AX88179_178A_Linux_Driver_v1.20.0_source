@@ -1,5 +1,3 @@
-## You can download the source code from https://www.asix.com.tw/en/product/USBEthernet/Super-Speed_USB_Ethernet/AX88179A
-
 ===============================================================================
 ASIX USB3.0/2.0 Gigabit Ethernet Network Adapter
 Driver Compilation & Configuration on Linux
@@ -72,9 +70,15 @@ execute the following commands:
 
 
 ================
-Programmer
+Programmer & IEEE TEST
 ================
 ASIX USB Ethernet Linux Command Line Programming Tool
+
+[Note]: Enable DEBUG message
+* Modify ENABLE_IOCTL_DEBUG to y in Makefile.
+	ENABLE_IOCTL_DEBUG = n
+	->
+	ENABLE_IOCTL_DEBUG = y
 
 1. Extract the compressed driver source file to your temporary directory by the
 following command:
@@ -129,28 +133,49 @@ directory and execute the following commands:
 === AX88179A/772D Flash/eFuse Programmer
 1. If you want to get help message for specific command, go to the driver 
 directory and execute the following command:
-	$sudo ./ax88179a_programmer help [command]
+	$sudo ./ax88179a_772d_programmer help [command]
 
 2. If you want to get the version of firmware, go to the driver directory 
 and execute the following command:
-	$sudo ./ax88179a_programmer rversion
+	$sudo ./ax88179a_772d_programmer rversion
 
 3. If you want to get the MAC address, go to the driver directory and execute 
 the following command:
-	$sudo ./ax88179a_programmer rmacaddr
+	$sudo ./ax88179a_772d_programmer rmacaddr
 
 4. If you want to write values of a file to the flash, go to the driver 
 directory and execute the following command:
-	$sudo ./ax88179a_programmer wflash [file]
+	$sudo ./ax88179a_772d_programmer wflash [file]
 
 5. If you want to write the eFuse, go to the driver directory and execute 
 the following command:
-	$sudo ./ax88179a_programmer wefuse -m [MAC] -s [SN] -f [File]
+	$sudo ./ax88179a_772d_programmer wefuse -m [MAC] -s [SN] -f [File]
 
 6. If you want to read the eFuse, go to the driver directory and execute 
 the following command:
-	$sudo ./ax88179a_programmer refuse -f [File]
+	$sudo ./ax88179a_772d_programmer refuse -f [File]
 
 7. If you want to reload the flash or eFuse to check version or MAC address 
 and so, go to the driver directory and execute the following command:
-	$sudo ./ax88179a_programmer reload
+	$sudo ./ax88179a_772d_programmer reload
+
+=== AX88179A/772D IEEE Test Tool
+1. If you want to execute IEEE test, go to the driver directory and execute the following command:
+
+	$sudo ./ax88179a_772d_ieee ieeetest speed option
+	    -- AX88179A_772D IEEE Test Tool
+		[speed]    - 1000: 1000Mbps,  100: 100Mbps,  10: 10Mbps
+		[option]   - For 1000Mbps
+				M1: Mode 1
+				M2: Mode 2
+				M3: Mode 3
+				M4: Mode 4
+
+			   - For 100Mbps
+				CA: Channel A
+				CB: Channel B
+
+			   - For 10Mbps
+				RP: Random Pattern
+				FF: Fixed Pattern(FF)
+				MDI: MDI

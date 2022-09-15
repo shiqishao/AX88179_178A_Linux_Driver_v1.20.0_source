@@ -30,13 +30,13 @@
 "AX88179/AX88178A Linux EEPROM/eFuse Programming Tool v1.5.0"
 
 const char help_str1[] =
-"./ioctl help [command]\n"
+"./ax88179_programmer help [command]\n"
 "    -- command description\n";
 const char help_str2[] =
 "        [command] - Display usage of specified command\n";
 
 const char readeeprom_str1[] =
-"./ioctl reeprom [type] [file] [size]\n"
+"./ax88179_programmer reeprom [type] [file] [size]\n"
 "    -- AX88179_178A EEPROM/eFuse read tool\n";
 const char readeeprom_str2[] =
 "        [type]    - 0: EEPROM,  1: eFuse\n"
@@ -45,7 +45,7 @@ const char readeeprom_str2[] =
 "                    eFuse maximum 64 bytes.\n";
 
 const char writeeeprom_str1[] =
-"./ioctl weeeprom [type] [file] [size]\n"
+"./ax88179_programmer weeeprom [type] [file] [size]\n"
 "    -- AX88179_178A EEPROM/eFuse write tool\n";
 const char writeeeprom_str2[] =
 "        [type]    - 0: EEPROM,  1: eFuse\n"
@@ -54,7 +54,7 @@ const char writeeeprom_str2[] =
 "                    eFuse maximum 64 bytes.\n";
 
 const char chgmac_str1[] =
-"./ioctl chgmac [type] [mac_addr] [size]\n"
+"./ax88179_programmer chgmac [type] [mac_addr] [size]\n"
 "    -- AX88179_178A EEPROM/eFuse write tool (specify MAC address)\n";
 const char chgmac_str2[] =
 "        [type]    - 0: EEPROM,  1: eFuse\n"
@@ -62,10 +62,10 @@ const char chgmac_str2[] =
 "        [size]    - EEPROM/eFuse SIZE (bytes). EEPROM size 12-512 bytes,\n"
 "                    eFuse maximum 64 bytes.\n";
 
-static void help_func(struct ax_command_info *info);
-static void readeeprom_func(struct ax_command_info *info);
-static void writeeeprom_func(struct ax_command_info *info);
-static void chgmac_func(struct ax_command_info *info);
+static int help_func(struct ax_command_info *info);
+static int readeeprom_func(struct ax_command_info *info);
+static int writeeeprom_func(struct ax_command_info *info);
+static int chgmac_func(struct ax_command_info *info);
 struct _command_list ax88179_cmd_list[] = {
 	{
 		"help",
@@ -134,7 +134,7 @@ static unsigned long STR_TO_U32(const char *cp, char **endp, unsigned int base)
 	return result;
 }
 
-static void help_func(struct ax_command_info *info)
+static int help_func(struct ax_command_info *info)
 {
 	int i;
 
@@ -150,10 +150,11 @@ static void help_func(struct ax_command_info *info)
 			    strlen(ax88179_cmd_list[i].cmd)) == 0) {
 			printf("%s%s\n", ax88179_cmd_list[i].help_ins,
 			       ax88179_cmd_list[i].help_desc);
-			return;
+			return -FAIL_INVALID_PARAMETER;
 		}
 	}
 
+	return SUCCESS;
 }
 
 static int compare_file(struct ax_command_info *info)
@@ -190,7 +191,7 @@ static int compare_file(struct ax_command_info *info)
 	return 0;
 }
 
-static void readeeprom_func(struct ax_command_info *info)
+static int readeeprom_func(struct ax_command_info *info)
 {
 	struct ifreq *ifr = (struct ifreq *)info->ifr;
 	struct _ax_ioctl_command ioctl_cmd;
@@ -207,7 +208,7 @@ static void readeeprom_func(struct ax_command_info *info)
 				    strlen(ax88179_cmd_list[i].cmd)) == 0) {
 				printf("%s%s\n", ax88179_cmd_list[i].help_ins,
 				       ax88179_cmd_list[i].help_desc);
-				return;
+				return -FAIL_INVALID_PARAMETER;
 			}
 		}
 	}
@@ -223,7 +224,7 @@ static void readeeprom_func(struct ax_command_info *info)
 				    strlen(ax88179_cmd_list[i].cmd)) == 0) {
 				printf("%s%s\n", ax88179_cmd_list[i].help_ins,
 				       ax88179_cmd_list[i].help_desc);
-				return;
+				return -FAIL_INVALID_PARAMETER;
 			}
 		}
 	}
@@ -231,7 +232,7 @@ static void readeeprom_func(struct ax_command_info *info)
 	pFile = fopen(info->argv[3], "w");
 	if (pFile == NULL) {
 		printf("fail to open %s file\n", info->argv[3]);
-		return;
+		return -FAIL_LOAD_FILE;
 	}
 
 	buf = (unsigned short *)malloc(sizeof(unsigned short) * wLen);
@@ -248,7 +249,7 @@ static void readeeprom_func(struct ax_command_info *info)
 		perror("ioctl");
 		free(buf);
 		fclose(pFile);
-		return;
+		return -FAIL_IOCTL;
 	}
 
 	for (i = 0; i < wLen / 8; i++) {
@@ -267,9 +268,11 @@ static void readeeprom_func(struct ax_command_info *info)
 	free(buf);
 	fclose(pFile);
 	printf("read completely\n");
+
+	return SUCCESS;
 }
 
-static void writeeeprom_func(struct ax_command_info *info)
+static int writeeeprom_func(struct ax_command_info *info)
 {
 	struct ifreq *ifr = (struct ifreq *)info->ifr;
 	struct _ax_ioctl_command ioctl_cmd;
@@ -287,7 +290,7 @@ static void writeeeprom_func(struct ax_command_info *info)
 				    strlen(ax88179_cmd_list[i].cmd)) == 0) {
 				printf("%s%s\n", ax88179_cmd_list[i].help_ins,
 				       ax88179_cmd_list[i].help_desc);
-				return;
+				return -FAIL_INVALID_PARAMETER;
 			}
 		}
 	}
@@ -304,7 +307,7 @@ static void writeeeprom_func(struct ax_command_info *info)
 				    strlen(ax88179_cmd_list[i].cmd)) == 0) {
 				printf("%s%s\n", ax88179_cmd_list[i].help_ins,
 				       ax88179_cmd_list[i].help_desc);
-				return;
+				return -FAIL_INVALID_PARAMETER;
 			}
 		}
 	}
@@ -312,7 +315,7 @@ static void writeeeprom_func(struct ax_command_info *info)
 	pFile = fopen(info->argv[3], "r");
 	if (pFile == NULL) {
 		printf("fail to open %s file\n", info->argv[3]);
-		return;
+		return -FAIL_LOAD_FILE;
 	}
 
 	buf = (unsigned short *)malloc(sizeof(unsigned short) * wLen);
@@ -343,11 +346,11 @@ static void writeeeprom_func(struct ax_command_info *info)
 			free(buf);
 			fclose(pFile);
 			perror("ioctl");
-			return;
+			return -FAIL_IOCTL;
 		}
 		if (ioctl_cmd.type) {
 			printf("EFuse has been programed.\n");
-			return;
+			return -FAIL_INVALID_PARAMETER;
 		}
 	}
 
@@ -359,7 +362,7 @@ io:
 		free(buf);
 		fclose(pFile);
 		perror("ioctl");
-		return;
+		return -FAIL_IOCTL;
 	}
 	if (compare_file(info) && retried < 3) {
 		ioctl_cmd.delay += 5;
@@ -371,15 +374,17 @@ io:
 		printf("Failure to write\n");
 		free(buf);
 		fclose(pFile);
-		return;
+		return -FAIL_GENERIAL_ERROR;
 	}
 
 	printf("Write completely\n");
 	free(buf);
 	fclose(pFile);
+
+	return SUCCESS;
 }
 
-static void chgmac_func(struct ax_command_info *info)
+static int chgmac_func(struct ax_command_info *info)
 {
 	struct ifreq *ifr = (struct ifreq *)info->ifr;
 	struct _ax_ioctl_command ioctl_cmd;
@@ -399,7 +404,7 @@ static void chgmac_func(struct ax_command_info *info)
 				    strlen(ax88179_cmd_list[i].cmd)) == 0) {
 				printf("%s%s\n", ax88179_cmd_list[i].help_ins,
 				       ax88179_cmd_list[i].help_desc);
-				return;
+				return -FAIL_INVALID_PARAMETER;
 			}
 		}
 	}
@@ -416,7 +421,7 @@ static void chgmac_func(struct ax_command_info *info)
 				    strlen(ax88179_cmd_list[i].cmd)) == 0) {
 				printf("%s%s\n", ax88179_cmd_list[i].help_ins,
 				       ax88179_cmd_list[i].help_desc);
-				return;
+				return -FAIL_INVALID_PARAMETER;
 			}
 		}
 	}
@@ -428,7 +433,7 @@ static void chgmac_func(struct ax_command_info *info)
 		if (pFile == NULL) {
 			printf("fail to open 'efuse' file\n");
 			free(buf);
-			return;
+			return -FAIL_LOAD_FILE;
 		}
 
 		for (i = 0; i < wLen / 8; i++) {
@@ -456,7 +461,7 @@ static void chgmac_func(struct ax_command_info *info)
 		if (ioctl(info->inet_sock, AX_PRIVATE, ifr) < 0) {
 			perror("ioctl");
 			free(buf);
-			return;
+			return -FAIL_IOCTL;
 		}
 	}
 
@@ -469,7 +474,7 @@ static void chgmac_func(struct ax_command_info *info)
 					(unsigned int *)&MAC[5]);
 	if (ret != 6) {
 		printf("Invalid MAC address\n");
-		return;
+		return -FAIL_INVALID_PARAMETER;
 	}
 
 	*(((char *)buf) + 0) = (unsigned char)MAC[1];
@@ -491,7 +496,7 @@ static void chgmac_func(struct ax_command_info *info)
 		if (ioctl(info->inet_sock, AX_PRIVATE, ifr) < 0) {
 			free(buf);
 			perror("ioctl");
-			return;
+			return -FAIL_IOCTL;
 		} else if (ioctl_cmd.type) {
 			printf("EFuse has been programed.\n");
 		}
@@ -501,7 +506,7 @@ io:
 	if (ioctl(info->inet_sock, AX_PRIVATE, ifr) < 0) {
 		perror("ioctl");
 		free(buf);
-		return;
+		return -FAIL_IOCTL;
 	}
 	if (compare_file(info) && retried < 3) {
 		ioctl_cmd.delay += 5;
@@ -512,11 +517,13 @@ io:
 	if (retried == 3) {
 		printf("Failure to write\n");
 		free(buf);
-		return;
+		return -FAIL_GENERIAL_ERROR;
 	}
 
 	printf("Chgmac completely\n");
 	free(buf);
+
+	return SUCCESS;
 }
 
 int main(int argc, char **argv)

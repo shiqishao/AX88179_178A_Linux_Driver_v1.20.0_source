@@ -46,6 +46,7 @@ MODULE_PARM_DESC(bifg, "RX Bulk Inter Frame Gap");
 
 static int
 ax_submit_rx(struct ax_device *netdev, struct rx_desc *desc, gfp_t mem_flags);
+static void ax_set_carrier(struct ax_device *axdev);
 
 void ax_get_drvinfo(struct net_device *net, struct ethtool_drvinfo *info)
 {
@@ -63,7 +64,7 @@ void ax_get_drvinfo(struct net_device *net, struct ethtool_drvinfo *info)
 #if KERNEL_VERSION(4, 10, 0) > LINUX_VERSION_CODE
 int ax_get_settings(struct net_device *netdev, struct ethtool_cmd *cmd)
 {
-	struct ax_device *axdev = netdev_priv(netdevnetdev);
+	struct ax_device *axdev = netdev_priv(netdev);
 	int ret;
 
 	if (!axdev->mii.mdio_read)
@@ -711,11 +712,6 @@ void ax_mdio_write(struct net_device *netdev, int phy_id, int reg, int val)
 	ax_write_cmd(axdev, AX_ACCESS_PHY, phy_id, (__u16)reg, 2, &res);
 }
 
-inline struct net_device_stats *ax_get_stats(struct net_device *netdev)
-{
-	return &netdev->stats;
-}
-
 static void ax_set_unplug(struct ax_device *axdev)
 {
 	if (axdev->udev->state == USB_STATE_NOTATTACHED)
@@ -905,11 +901,13 @@ static void ax_intr_callback(struct urb *urb)
 	}
 
 	event = urb->transfer_buffer;
+#ifndef ENABLE_DWC3_ENHANCE
+#ifndef ENABLE_INT_POLLING
 	axdev->link = event->link & AX_INT_PPLS_LINK;
-	axdev->intr_link_info = event->link_info;
 
 	if (axdev->link) {
 		if (!netif_carrier_ok(axdev->netdev)) {
+			axdev->intr_link_info = event->link_info;
 			set_bit(AX_LINK_CHG, &axdev->flags);
 			schedule_delayed_work(&axdev->schedule, 0);
 		}
@@ -920,7 +918,24 @@ static void ax_intr_callback(struct urb *urb)
 			schedule_delayed_work(&axdev->schedule, 0);
 		}
 	}
+#endif
+#else
+	if (event->link & AX_INT_PPLS_LINK) {
+		if (!axdev->intr_not_first_link_up) {
+			axdev->int_link_info = event->link_info_u8;
+			axdev->intr_not_first_link_up = 1;
+		} else if (axdev->int_link_info != event->link_info_u8) {
+			axdev->int_link_chg = 1;
+			set_bit(AX_EN_RX, &axdev->flags);
+			schedule_delayed_work(&axdev->schedule, 0);
 
+		}
+	} else {
+		axdev->intr_not_first_link_up = 0;
+		axdev->int_link_info = 0;
+		axdev->int_link_chg = 0;
+	}
+#endif
 resubmit:
 	res = usb_submit_urb(urb, GFP_ATOMIC);
 	if (res == -ENODEV) {
@@ -931,17 +946,38 @@ resubmit:
 			  "can't resubmit intr, status %d\n", res);
 	}
 }
-
-inline void *__rx_buf_align(void *data)
+#ifdef ENABLE_INT_POLLING
+static void __int_polling_work(struct work_struct *work)
 {
-	return (void *)ALIGN((uintptr_t)data, RX_ALIGN);
-}
+	struct ax_device *axdev = container_of(work,
+					       struct ax_device, int_polling_work.work);
+	u16 bmsr;
 
-inline void *__tx_buf_align(void *data, u8 tx_align_len)
-{
-	return (void *)ALIGN((uintptr_t)data, tx_align_len);
-}
+	if (test_bit(AX_UNPLUG, &axdev->flags) || !test_bit(AX_ENABLE, &axdev->flags))
+		return;
 
+	if (!mutex_trylock(&axdev->control)) {
+		schedule_delayed_work(&axdev->int_polling_work, 0);
+		return;
+	}
+
+	bmsr = ax_mdio_read(axdev->netdev, axdev->mii.phy_id, MII_BMSR);
+	axdev->link = bmsr & BMSR_LSTATUS;
+	if (axdev->link) {
+		if (!netif_carrier_ok(axdev->netdev))
+			ax_set_carrier(axdev);
+	} else {
+		if (netif_carrier_ok(axdev->netdev)) {
+			netif_stop_queue(axdev->netdev);
+			ax_set_carrier(axdev);
+		}
+	}
+
+	mutex_unlock(&axdev->control);
+
+	schedule_delayed_work(&axdev->int_polling_work, msecs_to_jiffies(INT_POLLING_TIMER));
+}
+#endif
 static void ax_free_buffer(struct ax_device *axdev)
 {
 	int i;
@@ -1307,8 +1343,9 @@ static void ax_tx_timeout(struct net_device *netdev)
 	struct ax_device *axdev = netdev_priv(netdev);
 
 	netif_warn(axdev, tx_err, netdev, "Tx timeout\n");
-
+#ifndef ENABLE_DWC3_ENHANCE
 	usb_queue_reset_device(axdev->intf);
+#endif
 }
 
 
@@ -1468,8 +1505,10 @@ static void ax_set_carrier(struct ax_device *axdev)
 			napi_enable(napi);
 		}
 	}
+#ifndef ENABLE_DWC3_ENHANCE
 	if (!test_bit(AX_SELECTIVE_SUSPEND, &axdev->flags))
 		mii_check_media(&axdev->mii, 1, 1);
+#endif
 }
 
 static inline void __ax_work_func(struct ax_device *axdev)
@@ -1490,7 +1529,19 @@ static inline void __ax_work_func(struct ax_device *axdev)
 
 	if (test_and_clear_bit(AX_LINK_CHG, &axdev->flags))
 		ax_set_carrier(axdev);
+#ifdef ENABLE_DWC3_ENHANCE
+	if (test_and_clear_bit(AX_EN_RX, &axdev->flags)) {
+		u16 medium_mode;
 
+		ax_read_cmd_nopm(axdev, AX_ACCESS_MAC, AX_MEDIUM_STATUS_MODE,
+					2, 2, &medium_mode, 1);
+		if (!(medium_mode & AX_MEDIUM_RECEIVE_EN) ||
+			axdev->int_link_chg == 1) {
+			axdev->driver_info->link_reset(axdev);
+			axdev->int_link_chg = 0;
+		}
+	}
+#endif
 	if (test_and_clear_bit(AX_SCHEDULE_NAPI, &axdev->flags) &&
 	    netif_carrier_ok(axdev->netdev))
 		napi_schedule(&axdev->napi);
@@ -1569,7 +1620,9 @@ static int ax_open(struct net_device *netdev)
 			   "intr_urb submit failed: %d\n", res);
 		goto out_unlock;
 	}
-
+#ifdef ENABLE_INT_POLLING
+	schedule_delayed_work(&axdev->int_polling_work, msecs_to_jiffies(INT_POLLING_TIMER));
+#endif
 	napi_enable(&axdev->napi);
 	netif_carrier_off(netdev);
 	netif_start_queue(netdev);
@@ -1596,6 +1649,9 @@ static int ax_close(struct net_device *netdev)
 
 	clear_bit(AX_ENABLE, &axdev->flags);
 	usb_kill_urb(axdev->intr_urb);
+#ifdef ENABLE_INT_POLLING
+	cancel_delayed_work_sync(&axdev->int_polling_work);
+#endif
 	cancel_delayed_work_sync(&axdev->schedule);
 	napi_disable(&axdev->napi);
 	netif_stop_queue(axdev->netdev);
@@ -1771,6 +1827,14 @@ static int ax_get_mac_address(struct ax_device *axdev)
 	return 0;
 }
 
+
+static bool ax_can_wakeup(struct ax_device *axdev)
+{
+	struct usb_device *udev = axdev->udev;
+
+	return (udev->actconfig->desc.bmAttributes & USB_CONFIG_ATT_WAKEUP);
+}
+
 static int ax_probe(struct usb_interface *intf, const struct usb_device_id *id)
 {
 	struct usb_device *udev = interface_to_usbdev(intf);
@@ -1842,6 +1906,10 @@ static int ax_probe(struct usb_interface *intf, const struct usb_device_id *id)
 
 	/* usb_enable_autosuspend(udev); */
 
+	device_set_wakeup_enable(&udev->dev, ax_can_wakeup(axdev));
+#ifdef ENABLE_INT_POLLING
+	INIT_DELAYED_WORK(&axdev->int_polling_work, __int_polling_work);
+#endif
 
 	return 0;
 out1:
@@ -1881,6 +1949,9 @@ static int ax_pre_reset(struct usb_interface *intf)
 	netif_stop_queue(netdev);
 	clear_bit(AX_ENABLE, &axdev->flags);
 	usb_kill_urb(axdev->intr_urb);
+#ifdef ENABLE_INT_POLLING
+	cancel_delayed_work_sync(&axdev->int_polling_work);
+#endif
 	cancel_delayed_work_sync(&axdev->schedule);
 	napi_disable(&axdev->napi);
 
@@ -1909,6 +1980,9 @@ static int ax_post_reset(struct usb_interface *intf)
 	napi_enable(&axdev->napi);
 	netif_wake_queue(netdev);
 	usb_submit_urb(axdev->intr_urb, GFP_KERNEL);
+#ifdef ENABLE_INT_POLLING
+	schedule_delayed_work(&axdev->int_polling_work, msecs_to_jiffies(INT_POLLING_TIMER));
+#endif
 
 	if (!list_empty(&axdev->rx_done))
 		napi_schedule(&axdev->napi);
@@ -1928,6 +2002,9 @@ static int ax_system_resume(struct ax_device *axdev)
 		axdev->driver_info->system_resume(axdev);
 		set_bit(AX_ENABLE, &axdev->flags);
 		usb_submit_urb(axdev->intr_urb, GFP_NOIO);
+#ifdef ENABLE_INT_POLLING
+		schedule_delayed_work(&axdev->int_polling_work, msecs_to_jiffies(INT_POLLING_TIMER));
+#endif
 	}
 
 	return 0;
@@ -1981,6 +2058,9 @@ static int ax_system_suspend(struct ax_device *axdev)
 
 		clear_bit(AX_ENABLE, &axdev->flags);
 		usb_kill_urb(axdev->intr_urb);
+#ifdef ENABLE_INT_POLLING
+		cancel_delayed_work_sync(&axdev->int_polling_work);
+#endif
 
 		ax_disable(axdev);
 
@@ -2015,6 +2095,9 @@ static int ax_runtime_suspend(struct ax_device *axdev)
 
 		clear_bit(AX_ENABLE, &axdev->flags);
 		usb_kill_urb(axdev->intr_urb);
+#ifdef ENABLE_INT_POLLING
+		cancel_delayed_work_sync(&axdev->int_polling_work);
+#endif
 
 		if (netif_carrier_ok(netdev)) {
 			struct napi_struct *napi = &axdev->napi;

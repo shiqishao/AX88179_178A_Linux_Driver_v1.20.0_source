@@ -45,8 +45,8 @@ const char usbcommand_str2[] =
 "        [size]    - USB wlength (0 - 0xFFFF)\n"
 "        [data]    - Data (0 - 0xFFFFFFFF)\n";
 
-static void help_func(struct ax_command_info *info);
-static void usbcommand_func(struct ax_command_info *info);
+static int help_func(struct ax_command_info *info);
+static int usbcommand_func(struct ax_command_info *info);
 
 struct _command_list asix_cmd_list[] = {
 	{	"help",
@@ -103,7 +103,7 @@ static unsigned long STR_TO_U32(const char *cp, char **endp,
 	return result;
 }
 
-static void help_func(struct ax_command_info *info)
+static int help_func(struct ax_command_info *info)
 {
 	int i;
 
@@ -122,13 +122,13 @@ static void help_func(struct ax_command_info *info)
 			printf("%s%s\n",
 				asix_cmd_list[i].help_ins,
 				asix_cmd_list[i].help_desc);
-			return;
+			return -FAIL_INVALID_PARAMETER;
 		}
 	}
 
 }
 
-static void usbcommand_func(struct ax_command_info *info)
+static int usbcommand_func(struct ax_command_info *info)
 {
 	struct ifreq *ifr = (struct ifreq *)info->ifr;
 	struct _ax_ioctl_command ioctl_cmd;
@@ -141,7 +141,7 @@ static void usbcommand_func(struct ax_command_info *info)
 				    strlen(asix_cmd_list[i].cmd)) == 0) {
 				printf("%s%s\n", asix_cmd_list[i].help_ins,
 						 asix_cmd_list[i].help_desc);
-				return;
+				return -FAIL_INVALID_PARAMETER;
 			}
 		}
 	}
@@ -161,7 +161,7 @@ static void usbcommand_func(struct ax_command_info *info)
 				    strlen(asix_cmd_list[i].cmd)) == 0) {
 				printf("%s%s\n", asix_cmd_list[i].help_ins,
 						 asix_cmd_list[i].help_desc);
-				return;
+				return -FAIL_INVALID_PARAMETER;
 			}
 		}
 	}
@@ -179,7 +179,7 @@ static void usbcommand_func(struct ax_command_info *info)
 
 	if (ioctl(info->inet_sock, AX_PRIVATE, ifr) < 0) {
 		perror("ioctl");
-		return;
+		return -FAIL_IOCTL;
 	}
 
 	if (usb_cmd->ops == USB_READ_OPS) {
@@ -190,6 +190,8 @@ static void usbcommand_func(struct ax_command_info *info)
 	}
 
 	printf("Command completely\n");
+
+	return SUCCESS;
 }
 
 int main(int argc, char **argv)

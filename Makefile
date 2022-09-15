@@ -1,18 +1,27 @@
 TARGET	= ax_usb_nic
-KDIR	= /lib/modules/$(shell uname -r)/build
+KDIR	:= /lib/modules/$(shell uname -r)/build
 PWD	= $(shell pwd)
 
 FROCE_MAC_ADDR = n
 
+ENABLE_IOCTL_DEBUG = n
 ENABLE_AUTODETACH_FUNC = n
 ENABLE_MAC_PASS = n
+ENABLE_DWC3_ENHANCE = n
+ENABLE_INT_POLLING = n
 
 obj-m := $(TARGET).o
 $(TARGET)-objs := ax_main.o ax88179_178a.o ax88179a_772d.o
 EXTRA_CFLAGS = -fno-pie -Wimplicit-fallthrough
+TOOL_EXTRA_CFLAGS = -Wimplicit-fallthrough
 
 ifeq ($(FROCE_MAC_ADDR), y)
 	EXTRA_CFLAGS += -DFROCE_MAC_ADDR
+endif
+
+ifeq ($(ENABLE_IOCTL_DEBUG), y)
+	EXTRA_CFLAGS += -DENABLE_IOCTL_DEBUG
+	TOOL_EXTRA_CFLAGS += -DENABLE_IOCTL_DEBUG
 endif
 
 ifeq ($(ENABLE_AUTODETACH_FUNC), y)
@@ -23,6 +32,13 @@ ifeq ($(ENABLE_MAC_PASS), y)
 	EXTRA_CFLAGS += -DENABLE_MAC_PASS
 endif
 
+ifeq ($(ENABLE_DWC3_ENHANCE), y)
+	EXTRA_CFLAGS += -DENABLE_DWC3_ENHANCE
+ifeq ($(ENABLE_INT_POLLING), n)
+	EXTRA_CFLAGS += -DENABLE_INT_POLLING
+endif
+endif
+
 ifneq (,$(filter $(SUBLEVEL),14 15 16 17 18 19 20 21))
 MDIR	= kernel/drivers/usb/net
 else
@@ -31,9 +47,10 @@ endif
 
 all:
 	make -C $(KDIR) M=$(PWD) modules
-	$(CC) ax88179_programmer.c -o ax88179_programmer
-	$(CC) ax88179a_programmer.c -o ax88179a_programmer
-	$(CC) axcmd.c -o axcmd
+	$(CC) $(TOOL_EXTRA_CFLAGS) ax88179_programmer.c -o ax88179_programmer
+	$(CC) $(TOOL_EXTRA_CFLAGS) ax88179a_programmer.c -o ax88179a_772d_programmer
+	$(CC) $(TOOL_EXTRA_CFLAGS) ax88179a_ieee.c -o ax88179a_772d_ieee
+	$(CC) $(TOOL_EXTRA_CFLAGS) axcmd.c -o axcmd
 
 install:
 ifneq (,$(wildcard /lib/modules/$(shell uname -r)/$(MDIR)/ax88179_178a.ko))
@@ -50,4 +67,4 @@ endif
 
 clean:
 	make -C $(KDIR) M=$(PWD) clean
-	rm -f ax88179_programmer ax88179a_programmer axcmd
+	rm -rf *_programmer *_ieee axcmd .tmp_versions
