@@ -1,4 +1,8 @@
 ## ~~你可以尝试下面这些新的驱动程序,它比之前的更稳定~~：
+### v3.0.0
+https://github.com/shiqishao/AX88179_178A_Linux_Driver_v1.20.0_source/tree/ASIX_USB_NIC_Linux_Driver_Source_v3.0.0
+### v2.0.0
+https://github.com/shiqishao/AX88179_178A_Linux_Driver_v1.20.0_source/tree/ASIX_USB_NIC_Linux_Driver_Source_v2.0.0
 ### v1.1.0_20221130
 https://github.com/shiqishao/AX88179_178A_Linux_Driver_v1.20.0_source/tree/ASIX_USB_NIC_Linux_Driver_Source_v1.1.0_20221130
 ### v1.0.0_20220726
